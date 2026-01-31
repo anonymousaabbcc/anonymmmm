@@ -6,11 +6,11 @@ This repository contains the codebase and dataset links for our paper.
 
 - `project/`
   - `CL_embed_combined/`  
-    **Trajectory Contrastive Learning (CL)** component. Produces trajectory embeddings used by later stages.
+    **Trajectory Contrastive Learning** component. Produces trajectory embeddings used by later stages.
   - `Graph_based_prompt_align/`  
-    **Trajectory–Text Representation Alignment (Graph)** component. Aligns trajectory embeddings with text/prompt representations.
+    **Trajectory–Text Representation Alignment** component. Aligns trajectory embeddings with text/prompt representations.
   - `Multi_cities_prediction/`  
-    **Multi-City Knowledge Integration (Multi)** component. Performs multi-city training and prediction using the aligned representations.
+    **Multi-City Knowledge Integration** component. Performs multi-city training and prediction using the aligned representations.
 
 ---
 
