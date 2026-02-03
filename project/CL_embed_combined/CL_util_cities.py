@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 from typing import Tuple, Optional, Dict, Any, List, Sequence, Union
@@ -30,14 +29,6 @@ def to_torch(x: np.ndarray, device: Optional[torch.device] = None) -> torch.Tens
     if device is not None:
         t = t.to(device)
     return t
-
-
-def drop_t_keep_mask(arr4: np.ndarray) -> np.ndarray:
-    assert arr4.ndim == 2 and arr4.shape[1] == 4, f"expected (T,4), got {arr4.shape}"
-    out = np.empty((arr4.shape[0], 3), dtype=np.float32)
-    out[:, 0:2] = arr4[:, 0:2].astype(np.float32, copy=False)
-    out[:, 2] = arr4[:, 3].astype(np.float32, copy=False)
-    return out
 
 
 def _is_tail_contiguous_mask(mask_bool: np.ndarray) -> bool:
@@ -97,13 +88,13 @@ def segment_pool_to_fixed_len_np(arr: np.ndarray, out_len: int) -> np.ndarray:
     if T <= 0:
         return pooled
 
-    xyz = arr[:, :3].astype(np.float32, copy=False)
+    xyt = arr[:, :3].astype(np.float32, copy=False)
     idx = (np.arange(T, dtype=np.int64) * out_len) // max(1, T)
     idx = np.clip(idx, 0, out_len - 1)
 
     sums = np.zeros((out_len, 3), dtype=np.float32)
     cnts = np.zeros((out_len,), dtype=np.float32)
-    np.add.at(sums, idx, xyz)
+    np.add.at(sums, idx, xyt)
     np.add.at(cnts, idx, 1.0)
 
     nonempty = cnts > 0
@@ -111,7 +102,7 @@ def segment_pool_to_fixed_len_np(arr: np.ndarray, out_len: int) -> np.ndarray:
 
     if not bool(nonempty.all()):
         if not bool(nonempty.any()):
-            means[:] = xyz[0]
+            means[:] = xyt[0]
         else:
             last = None
             for j in range(out_len):
@@ -248,7 +239,9 @@ class MultiCityCLDataset(Dataset):
         self.N_list: List[int] = []
         self.L_list: List[int] = []
 
+        print(f"[MultiCityCLDataset] Loading {self.n_cities} NPY source(s)...")
         for city, path in self.sources:
+            print(f"  - {city}: {path}")
             arr = np.load(path, mmap_mode="r" if mmap else None)
             assert arr.ndim == 3 and arr.shape[2] == 4, f"{city} expected (N,L,4), got {arr.shape}"
             self.data_list.append(arr)
@@ -281,6 +274,12 @@ class MultiCityCLDataset(Dataset):
 
         self.cumN = np.cumsum(np.asarray(self.N_list, dtype=np.int64))
         self.base_uid = np.concatenate(([0], self.cumN[:-1])).astype(np.int64)
+
+        mode = f"CPU-prepool({self.prepool_len})" if self.prepool_len > 0 else f"pad({self.max_len})"
+        print(f"[MultiCityCLDataset] cities={self.n_cities} | N_total={self.N_total} | mode={mode} | future_len={self.future_len}")
+        for i, city in enumerate(self.city_names):
+            print(f"    {city:>6s}: N={self.N_list[i]}  L_city={self.L_list[i]}  cap_real_len={self.cap_real_len_list[i]}")
+        print(f"[MultiCityCLDataset] density operator: uniform strided zeroing with delta in [{self.delta_range[0]},{self.delta_range[1]}]")
 
     def set_epoch(self, epoch: int):
         self.epoch = int(epoch)
@@ -371,18 +370,13 @@ class MultiCityCLDataset(Dataset):
             sA_4, m_sA = pad_to_len(st_anchor, self.max_len)
             sP_4, m_sP = pad_to_len(st_pos, self.max_len)
 
-        dA_np = drop_t_keep_mask(dA_4)
-        dP_np = drop_t_keep_mask(dP_4)
-        sA_np = drop_t_keep_mask(sA_4)
-        sP_np = drop_t_keep_mask(sP_4)
-
         uid = int(self.base_uid[city_id] + local_idx)
 
         return {
-            "density_anchor": to_torch(dA_np),
-            "density_pos": to_torch(dP_np),
-            "st_anchor": to_torch(sA_np),
-            "st_pos": to_torch(sP_np),
+            "density_anchor": to_torch(dA_4),
+            "density_pos": to_torch(dP_4),
+            "st_anchor": to_torch(sA_4),
+            "st_pos": to_torch(sP_4),
             "mask_density_anchor": torch.from_numpy(m_dA),
             "mask_density_pos": torch.from_numpy(m_dP),
             "mask_st_anchor": torch.from_numpy(m_sA),
@@ -404,6 +398,7 @@ class MultiCityFullViewDataset(Dataset):
         keep_recent: bool = True,
     ):
         super().__init__()
+        print(f"[MultiCityFullViewDataset] Loading NPY from {npy_path} ...")
         data = np.load(npy_path, mmap_mode="r" if mmap else None)
         assert data.ndim == 3 and data.shape[2] == 4
         self.data = data
@@ -417,6 +412,9 @@ class MultiCityFullViewDataset(Dataset):
 
         self.prepool_len = int(prepool_len) if (prepool_len is not None and int(prepool_len) > 0) else 0
         self.max_len = int(self.prepool_len) if self.prepool_len > 0 else int(self.cap_real_len)
+
+        mode = f"CPU-prepool({self.prepool_len})" if self.prepool_len > 0 else f"pad({self.max_len})"
+        print(f"[MultiCityFullViewDataset] N={self.N}, L_city={self.L}, cap_real_len={self.cap_real_len}, mode={mode}, future_len={self.future_len}")
 
     def __len__(self):
         return int(self.N)
@@ -438,10 +436,8 @@ class MultiCityFullViewDataset(Dataset):
         else:
             full_4, mask_np = pad_to_len(hist, self.max_len)
 
-        full_np = drop_t_keep_mask(full_4)
-
         return {
-            "full": to_torch(full_np),
+            "full": to_torch(full_4),
             "mask": torch.from_numpy(mask_np),
             "traj_index": torch.tensor(int(idx), dtype=torch.long),
         }

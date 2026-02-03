@@ -1,8 +1,8 @@
-# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import os
 import sys
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import time
 import math
 import random
@@ -12,9 +12,6 @@ from typing import Optional, List, Tuple
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from numpy.lib.format import open_memmap
-
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from CL_util_cities import set_seed, MultiCityCLDataset, MultiCityFullViewDataset
 from CL_model_cities import MultiCityDualCL, info_nce_loss_masked
@@ -105,8 +102,7 @@ class TrainConfig:
 
 
 def _make_joint_train_loader(cfg: TrainConfig) -> DataLoader:
-    if not cfg.cities:
-        raise ValueError("cfg.cities is empty")
+    assert cfg.cities, "cfg.cities is empty."
 
     sources = [(c.name, c.train_npy) for c in cfg.cities]
     ds = MultiCityCLDataset(
@@ -207,11 +203,7 @@ def _debug_pair_stats(zA: torch.Tensor, zP: torch.Tensor, name: str):
     off_m = float(off.mean().item())
     off_std = float(off.std().item())
 
-    print(
-        f"[DBG][{name}] z_std={z_std:.4e} | "
-        f"diag_cos mean/min/max={diag_m:.4f}/{diag_min:.4f}/{diag_max:.4f} | "
-        f"off_cos mean/std={off_m:.4f}/{off_std:.4f}"
-    )
+    print(f"[DBG][{name}] z_std={z_std:.4e} | diag_cos mean/min/max={diag_m:.4f}/{diag_min:.4f}/{diag_max:.4f} | off_cos mean/std={off_m:.4f}/{off_std:.4f}")
 
 
 def _maybe_drop_lr(optimizer: torch.optim.Optimizer, factor: float, min_lr: float) -> bool:
@@ -307,6 +299,7 @@ def _train_one_epoch(
 
         if (floor_cnt_d >= cfg.ce_floor_patience) or (floor_cnt_s >= cfg.ce_floor_patience):
             which = "density" if floor_cnt_d >= cfg.ce_floor_patience else "st"
+            print(f"[WARN] InfoNCE collapse suspected ({which}) | loss≈log(B)={ce_floor:.4f} for {cfg.ce_floor_patience} steps. Dropping LR.")
             dropped = _maybe_drop_lr(optimizer, cfg.lr_drop_factor, cfg.min_lr)
             if dropped:
                 lr_now = optimizer.param_groups[0]["lr"]
@@ -363,6 +356,9 @@ def _train_one_epoch(
     return avg_loss, global_step
 
 
+from numpy.lib.format import open_memmap
+
+
 @torch.no_grad()
 def _export_embeddings(
     npy_path: str,
@@ -374,6 +370,7 @@ def _export_embeddings(
 ):
     os.makedirs(cfg.emb_dir, exist_ok=True)
     loader = _make_export_loader(npy_path, cfg)
+
     model.eval()
 
     n_total = len(loader.dataset)
@@ -438,8 +435,7 @@ def _export_embeddings(
         min_tok_norm = min(min_tok_norm, float(tok_norms.min().item()))
         max_tok_norm = max(max_tok_norm, float(tok_norms.max().item()))
 
-    if write_ptr != n_total:
-        raise RuntimeError(f"export write mismatch: write_ptr={write_ptr}, n_total={n_total}")
+    assert write_ptr == n_total, f"export write mismatch: write_ptr={write_ptr}, n_total={n_total}"
     del mm
 
     mean_x = sum_x / max(1, total_elems)
@@ -456,8 +452,7 @@ def _export_embeddings(
 
 
 def _train_joint_and_export(cfg: TrainConfig):
-    if not cfg.cities:
-        raise ValueError("cfg.cities is empty")
+    assert cfg.cities, "cfg.cities is empty. Please provide CitySpec list in cfg.cities."
 
     device = torch.device(cfg.device)
     _limit_cpu_threads()
@@ -475,7 +470,7 @@ def _train_joint_and_export(cfg: TrainConfig):
     os.makedirs(joint_ckpt_dir, exist_ok=True)
 
     model = MultiCityDualCL(
-        in_feat=3,
+        in_feat=4,
         emb_dim=cfg.emb_dim,
         proj_dim=cfg.proj_dim,
         n_heads=cfg.n_heads,
@@ -491,7 +486,6 @@ def _train_joint_and_export(cfg: TrainConfig):
     opt_kwargs = dict(lr=cfg.lr, weight_decay=cfg.weight_decay)
     if device.type == "cuda":
         opt_kwargs["fused"] = True
-
     try:
         optimizer = torch.optim.AdamW(model.parameters(), **opt_kwargs)
     except TypeError:
@@ -507,7 +501,6 @@ def _train_joint_and_export(cfg: TrainConfig):
     best_state = None
     best_epoch = -1
     global_step = 0
-    loss_tr = float("inf")
 
     for epoch in range(1, cfg.epochs + 1):
         if hasattr(train_loader.dataset, "set_epoch"):

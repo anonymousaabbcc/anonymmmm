@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import math
@@ -9,14 +8,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-def _strip_t_keep_mask(x: torch.Tensor) -> torch.Tensor:
+def _ensure_xy_t_mask(x: torch.Tensor) -> torch.Tensor:
     if x.dim() != 3:
         raise ValueError(f"Expected x dim=3 (B,T,F), got {tuple(x.shape)}")
     fdim = int(x.size(-1))
-    if fdim == 3:
-        return x
     if fdim == 4:
-        return x[..., (0, 1, 3)]
+        return x
+    if fdim == 3:
+        B, T, _ = x.shape
+        out = x.new_zeros((B, T, 4))
+        out[..., 0:2] = x[..., 0:2]
+        out[..., 2] = 0.0
+        out[..., 3] = x[..., 2]
+        return out
     raise ValueError(f"Expected last dim 3 or 4, got {fdim} with shape {tuple(x.shape)}")
 
 
@@ -25,9 +29,8 @@ def segment_pool_traj_to_fixed_len(
     pad_mask: Optional[torch.Tensor],
     target_len: int,
 ) -> torch.Tensor:
-    x = _strip_t_keep_mask(x)
-    if x.dim() != 3 or int(x.size(-1)) != 3:
-        raise ValueError(f"Expected (B,T,3), got {tuple(x.shape)}")
+    x = _ensure_xy_t_mask(x)
+    assert x.dim() == 3 and x.size(-1) == 4, f"Expected (B,T,4), got {tuple(x.shape)}"
 
     B, T, _ = x.shape
     device = x.device
@@ -36,12 +39,12 @@ def segment_pool_traj_to_fixed_len(
         raise ValueError("target_len must be positive")
 
     if pad_mask is None:
-        pad_mask_b = (x[..., 2] > 0.5)
+        pad_mask_b = (x[..., 3] > 0.5)
     else:
         pad_mask_b = pad_mask.to(dtype=torch.bool)
 
-    out = x.new_zeros((B, L, 3))
-    out[..., 2] = 1.0
+    out = x.new_zeros((B, L, 4))
+    out[..., 3] = 1.0
 
     x_f = x.float()
 
@@ -49,19 +52,19 @@ def segment_pool_traj_to_fixed_len(
         valid = pad_mask_b[i]
         Ti = int(valid.sum().item())
         if Ti <= 0:
-            xy0 = x_f[i, 0:1, :2]
-            out[i, :, :2] = xy0.to(out.dtype).expand(L, 2)
+            xyz0 = x_f[i, 0:1, 0:3] if T > 0 else x_f.new_zeros((1, 3))
+            out[i, :, 0:3] = xyz0.to(out.dtype).expand(L, 3)
             continue
 
-        xi = x_f[i, valid, :2]
+        xi = x_f[i, valid, 0:3]
         if Ti == 1:
-            out[i, :, :2] = xi.to(out.dtype).expand(L, 2)
+            out[i, :, 0:3] = xi.to(out.dtype).expand(L, 3)
             continue
 
         j = torch.arange(Ti, device=device, dtype=torch.long)
         bin_idx = (j * L) // Ti
 
-        sums = torch.zeros((L, 2), device=device, dtype=torch.float32)
+        sums = torch.zeros((L, 3), device=device, dtype=torch.float32)
         counts = torch.zeros((L,), device=device, dtype=torch.float32)
 
         sums.index_add_(0, bin_idx, xi)
@@ -91,7 +94,7 @@ def segment_pool_traj_to_fixed_len(
                         break
                     means[k] = first
 
-        out[i, :, :2] = means.to(out.dtype)
+        out[i, :, 0:3] = means.to(out.dtype)
 
     return out
 
@@ -114,7 +117,7 @@ class PosEncoding(nn.Module):
 class TrajectoryEncoder(nn.Module):
     def __init__(
         self,
-        in_feat: int = 3,
+        in_feat: int = 4,
         emb_dim: int = 128,
         n_heads: int = 4,
         n_layers: int = 2,
@@ -125,10 +128,10 @@ class TrajectoryEncoder(nn.Module):
     ):
         super().__init__()
         if int(in_feat) not in (3, 4):
-            raise ValueError("in_feat must be 3 or 4")
+            raise ValueError("TrajectoryEncoder expects in_feat=4 or 3")
 
         self.node_len = int(node_len)
-        eff_feat = 3
+        eff_feat = 4
 
         self.conv2d = nn.Conv2d(
             in_channels=1,
@@ -162,7 +165,7 @@ class TrajectoryEncoder(nn.Module):
             nn.init.uniform_(self.conv2d.bias, -bound, bound)
 
     def forward(self, x: torch.Tensor, pad_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
-        x = _strip_t_keep_mask(x)
+        x = _ensure_xy_t_mask(x)
         key_pad = None
 
         if x.size(1) != self.node_len:
@@ -173,15 +176,14 @@ class TrajectoryEncoder(nn.Module):
                 pm = pad_mask.to(dtype=torch.bool)
                 key_pad = ~pm
                 x = x.clone()
-                x[..., 2] = pm.to(dtype=x.dtype)
+                x[..., 3] = pm.to(dtype=x.dtype)
             else:
                 key_pad = None
                 x = x.clone()
-                x[..., 2] = 1.0
+                x[..., 3] = 1.0
 
         B, T, Fdim = x.shape
-        if T != self.node_len or Fdim != 3:
-            raise ValueError(f"Expected (B,{self.node_len},3), got {tuple(x.shape)}")
+        assert T == self.node_len and Fdim == 4
 
         x = x.unsqueeze(1)
         x = self.conv2d(x)
@@ -232,8 +234,7 @@ class NodeProjector(nn.Module):
 
     def forward(self, seq_feat: torch.Tensor) -> torch.Tensor:
         B, T, _ = seq_feat.shape
-        if T != self.node_len:
-            raise ValueError(f"Expected T=={self.node_len}, got {T}")
+        assert T == self.node_len, f"Expected T=={self.node_len}, got {T}"
         x = self.proj(seq_feat)
         x = self.post(x)
         x = self.out_ln(x)
@@ -243,7 +244,7 @@ class NodeProjector(nn.Module):
 class MultiCityDualCL(nn.Module):
     def __init__(
         self,
-        in_feat: int = 3,
+        in_feat: int = 4,
         emb_dim: int = 128,
         proj_dim: int = 128,
         n_heads: int = 4,
@@ -259,8 +260,7 @@ class MultiCityDualCL(nn.Module):
     ):
         super().__init__()
         if int(in_feat) not in (3, 4):
-            raise ValueError("in_feat must be 3 or 4")
-
+            raise ValueError("MultiCityDualCL expects in_feat=4 or 3.")
         self.node_len = int(node_len)
         self.node_dim = int(node_dim)
         self._cl_norm_eps = float(cl_norm_eps)
@@ -297,16 +297,17 @@ class MultiCityDualCL(nn.Module):
 
     def encode_traj(self, x: torch.Tensor, pad_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         seq_feat = self.traj_encoder(x, pad_mask=pad_mask)
-        return self.node_projector(seq_feat)
+        node_seq = self.node_projector(seq_feat)
+        return node_seq
 
     def encode_subtraj(self, x: torch.Tensor, pad_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         seq_feat = self.subtraj_encoder(x, pad_mask=pad_mask)
-        return self.node_projector(seq_feat)
+        node_seq = self.node_projector(seq_feat)
+        return node_seq
 
     def project_cl(self, node_seq: torch.Tensor) -> torch.Tensor:
         B, T, D = node_seq.shape
-        if T != self.node_len or D != self.node_dim:
-            raise ValueError(f"Expected (B,{self.node_len},{self.node_dim}), got {tuple(node_seq.shape)}")
+        assert T == self.node_len and D == self.node_dim, f"Expected (B,{self.node_len},{self.node_dim}), got {tuple(node_seq.shape)}"
 
         if self._cl_tanh:
             s = max(self._cl_tanh_scale, 1e-6)
@@ -315,7 +316,8 @@ class MultiCityDualCL(nn.Module):
 
     @torch.no_grad()
     def encode_node_embedding(self, x: torch.Tensor, pad_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
-        return self.project_cl(self.encode_traj(x, pad_mask=pad_mask))
+        node_seq = self.encode_traj(x, pad_mask=pad_mask)
+        return self.project_cl(node_seq)
 
     def forward(
         self,
@@ -344,8 +346,7 @@ def info_nce_loss_masked(
     temperature: float = 0.1,
     eps: float = 1e-12,
 ) -> torch.Tensor:
-    if z1.dim() not in (2, 3) or z2.dim() not in (2, 3):
-        raise ValueError("z must be (B,D) or (B,T,D)")
+    assert z1.dim() in (2, 3) and z2.dim() in (2, 3), "z must be (B,D) or (B,T,D)"
 
     eps_eff = max(float(eps), 1e-6)
     temp = max(float(temperature), eps_eff)
