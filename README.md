@@ -39,8 +39,8 @@ Please follow the original dataset terms and licenses when downloading and using
 
 - Store each trajectory as a fixed-length sequence of `(x, y, t, mask)`, where `mask=1` indicates a real point and `mask=0` indicates padding.
 - Discard trajectories with fewer than 8 observed points.
-- Pad all trajectories to a unified length `T_max = max(max_len(train), max_len(test))`; padded steps are zeroed out and must be ignored during training and evaluation.
-- Normalize `(x, y, t)` to `[-1, 1]` per city using min–max fitted on the training split, and apply the same scaler to validation/test.
+- Pad all trajectories to a unified length `T_max = max(max_len(train), max_len(test))`; padded steps are zeroed out and should be ignored during evaluation.
+- Normalize `(x, y, t)` to `[-1, 1]` per city using min–max fitted on the training split, and apply the same scaler to test.
 
 ---
 
