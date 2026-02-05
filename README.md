@@ -18,14 +18,20 @@ This repository contains the codebase and dataset links for our paper.
 
 We use the following public datasets:
 
-- **Porto**: PKDD 2015 Taxi Trajectory Prediction  
+- **Porto**:
   https://www.kaggle.com/c/pkdd-15-predict-taxi-service-trajectory-i
 
-- **Beijing**: START repository  
+- **Beijing**: 
   https://github.com/aptx1231/START
 
-Please follow the original dataset terms and licenses when downloading and using the data.  
-Xi’an (XA) and Chengdu (CD) will be released upon paper acceptance.
+- **Chengdu (CD)**:  
+  https://github.com/Whale2021/Dataset
+
+- **Xi’an (XA)** (either of the following sources):  
+  https://www.kaggle.com/datasets/ash1971/didi-dataset  
+  https://github.com/mzy94/JCLRNT
+
+Please follow the original dataset terms and licenses when downloading and using the data.
 
 ---
 
