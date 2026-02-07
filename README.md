@@ -16,20 +16,20 @@ This repository contains the codebase and dataset links for our paper.
 
 ## Data Sources
 
-We use the following public datasets:
+We use four real-world taxi GPS trajectory datasets from Porto [1], Beijing [2], and Chengdu/Xi’an [3].
 
-- **Porto**:
+### Download / Project Pages (when available)
+- **Porto** (PKDD 2015 taxi trajectory challenge page):  
   https://www.kaggle.com/c/pkdd-15-predict-taxi-service-trajectory-i
 
-- **Beijing**: 
+- **Beijing** (START project page):  
   https://github.com/aptx1231/START
 
-
-- **Xi’an (XA)** and **Chengdu (CD)** (either of the following sources):  
-  https://www.kaggle.com/datasets/ash1971/didi-dataset  
-  https://github.com/mzy94/JCLRNT
+- **Xi’an (XA)** and **Chengdu (CD)**:  
+  Please refer to [3] for the dataset description and access policy.
 
 Please follow the original dataset terms and licenses when downloading and using the data.
+
 
 ---
 
@@ -54,3 +54,17 @@ We use **Llama 3.2 (1B)** from Hugging Face:
 
 This project uses **Llama 3.2**, which is licensed under the **Llama 3.2 Community License** (see the license text link above).  
 Copyright © Meta Platforms, Inc. All Rights Reserved.
+
+
+
+## References
+
+[1] Xiangheng Wang, Ziquan Fang, Chenglong Huang, Danlei Hu, Lu Chen, and Yunjun Gao.
+GTR: A General, Multi-View, and Dynamic Framework for Trajectory Representation Learning. ICML 2025.
+
+[2] Jiawei Jiang, Dayan Pan, Houxing Ren, Xiaohan Jiang, Chao Li, and Jingyuan Wang.
+Self-supervised Trajectory Representation Learning with Temporal Regularities and Travel Semantics. ICDE 2023.
+
+[3] Zhenyu Mao, Ziyue Li, Dedong Li, Lei Bai, and Rui Zhao.
+Jointly contrastive representation learning on road network and trajectory. CIKM 2022.
+
