@@ -24,10 +24,8 @@ We use the following public datasets:
 - **Beijing**: 
   https://github.com/aptx1231/START
 
-- **Chengdu (CD)**:  
-  https://github.com/Whale2021/Dataset
 
-- **Xi’an (XA)** (either of the following sources):  
+- **Xi’an (XA)** and **Chengdu (CD)** (either of the following sources):  
   https://www.kaggle.com/datasets/ash1971/didi-dataset  
   https://github.com/mzy94/JCLRNT
 
