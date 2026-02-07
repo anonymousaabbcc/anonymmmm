@@ -26,7 +26,9 @@ We use four real-world taxi GPS trajectory datasets from Porto [1], Beijing [2],
   https://github.com/aptx1231/START
 
 - **Xi’an (XA)** and **Chengdu (CD)**:  
-  Please refer to [3] for the dataset description and access policy.
+  Original data source: DiDi GAIA Open Dataset Initiative.  
+  A public access channel is available at: https://github.com/mzy94/JCLRNT
+
 
 Please follow the original dataset terms and licenses when downloading and using the data.
 
@@ -59,8 +61,8 @@ Copyright © Meta Platforms, Inc. All Rights Reserved.
 
 ## References
 
-[1] Xiangheng Wang, Ziquan Fang, Chenglong Huang, Danlei Hu, Lu Chen, and Yunjun Gao.
-GTR: A General, Multi-View, and Dynamic Framework for Trajectory Representation Learning. ICML 2025.
+[1] PKDD 2015 Taxi Trajectory Prediction Challenge (Porto).  
+https://www.kaggle.com/c/pkdd-15-predict-taxi-service-trajectory-i
 
 [2] Jiawei Jiang, Dayan Pan, Houxing Ren, Xiaohan Jiang, Chao Li, and Jingyuan Wang.
 Self-supervised Trajectory Representation Learning with Temporal Regularities and Travel Semantics. ICDE 2023.
